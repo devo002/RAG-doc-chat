@@ -39,11 +39,20 @@ async def startup():
     list(state.embedder.embed(["warmup"]))
 
     print("Connecting to ChromaDB…")
-    state.chroma_client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
-    state.collection = state.chroma_client.get_or_create_collection(
-        name=COLLECTION_NAME,
-        metadata={"hnsw:space": "cosine"},
-    )
+    import time
+    for attempt in range(30):
+        try:
+            state.chroma_client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+            state.collection = state.chroma_client.get_or_create_collection(
+                name=COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"},
+            )
+            break
+        except Exception:
+            if attempt == 29:
+                raise
+            print(f"ChromaDB not ready (attempt {attempt + 1}/30), retrying in 2s…")
+            time.sleep(2)
 
     state.anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     print("All services ready ✓")
