@@ -42,6 +42,10 @@ docker compose up --build
 open http://localhost:3000
 ```
 
+## Output
+![Architecture](output.png)
+```
+
 > First build takes a few minutes as it downloads the embedding model. Subsequent starts are fast because the model is cached in the Docker image.
 
 ---
