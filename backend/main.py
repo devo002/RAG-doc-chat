@@ -35,8 +35,14 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 @app.on_event("startup")
 async def startup():
     print("Loading embedding model…")
-    state.embedder = TextEmbedding("BAAI/bge-small-en-v1.5")
-    list(state.embedder.embed(["warmup"]))
+    state.embedder = TextEmbedding(
+        "BAAI/bge-small-en-v1.5",
+        providers=["CPUExecutionProvider"],
+    )
+    # Warm up with a realistic batch to fully initialize the ONNX session.
+    # A single short string doesn't exercise the same code path as real chunks.
+    _warmup = ["This is a warmup sentence to initialize the ONNX inference session properly."] * 32
+    list(state.embedder.embed(_warmup))
 
     print("Connecting to ChromaDB…")
     import time

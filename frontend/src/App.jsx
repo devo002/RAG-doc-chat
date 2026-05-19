@@ -302,17 +302,25 @@ export default function App() {
   const [showEval, setShowEval] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState([]); // [] = all
+  const [backendReady, setBackendReady] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(scrollToBottom, [messages]);
 
-  const loadDocs = useCallback(() => {
-    fetch(`${API}/documents`)
-      .then((r) => r.json())
-      .then(setDocs)
-      .catch(console.error);
+  const loadDocs = useCallback(async () => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        const r = await fetch(`${API}/documents`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        setDocs(await r.json());
+        setBackendReady(true);
+        return;
+      } catch {
+        if (attempt < 9) await new Promise((res) => setTimeout(res, 3000));
+      }
+    }
   }, []);
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
@@ -437,15 +445,23 @@ export default function App() {
         <div style={S.section}>
           <div style={S.label}>Upload PDFs</div>
           <div
-            style={{ ...S.uploadZone, ...(dragOver ? S.uploadZoneHover : {}) }}
-            onClick={() => fileInputRef.current.click()}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            style={{
+              ...S.uploadZone,
+              ...(dragOver && backendReady ? S.uploadZoneHover : {}),
+              opacity: backendReady ? 1 : 0.45,
+              cursor: backendReady ? "pointer" : "not-allowed",
+            }}
+            onClick={() => backendReady && fileInputRef.current.click()}
+            onDragOver={(e) => { e.preventDefault(); if (backendReady) setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files); }}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); if (backendReady) handleUpload(e.dataTransfer.files); }}
           >
-            <Upload size={24} color={dragOver ? "#7c6cfa" : "#475569"} />
+            {backendReady
+              ? <Upload size={24} color={dragOver ? "#7c6cfa" : "#475569"} />
+              : <Loader2 size={24} style={{ animation: "spin 1s linear infinite", color: "#7c6cfa" }} />
+            }
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
-              Drop PDFs here or click to browse
+              {backendReady ? "Drop PDFs here or click to browse" : "Backend starting up…"}
             </div>
             <input
               ref={fileInputRef}
@@ -483,7 +499,13 @@ export default function App() {
         <div style={S.docList}>
           {docs.length === 0 && (
             <div style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 16 }}>
-              No documents yet
+              {backendReady
+                ? "No documents yet"
+                : <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                    <Loader2 size={16} style={{ animation: "spin 1s linear infinite", color: "#7c6cfa" }} />
+                    <span>Connecting to server…</span>
+                  </div>
+              }
             </div>
           )}
           {docs.map((doc) => {
