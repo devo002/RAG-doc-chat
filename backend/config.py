@@ -3,13 +3,14 @@ from pathlib import Path
 
 UPLOAD_DIR = Path("/app/uploads")
 
-CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
-CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8001"))
+QDRANT_URL     = os.getenv("QDRANT_URL", "")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 COLLECTION_NAME = "documents"
 
-MIN_CHUNK_SIZE = 200
-MAX_CHUNK_SIZE = 1500
-CHUNK_OVERLAP  = 200
+CHUNK_SIZE_TOKENS    = 400   # tokens — SentenceSplitter unit
+CHUNK_OVERLAP_TOKENS = 50    # tokens
+MIN_CHUNK_CHARS      = 100   # discard nodes shorter than this
+
 TOP_K_RETRIEVE = 15
 TOP_K_RERANK   = 5

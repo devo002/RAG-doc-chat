@@ -1,8 +1,10 @@
 import json
 from typing import AsyncIterator
 
+from qdrant_client.models import Filter, FieldCondition, MatchAny
+
 import state
-from config import TOP_K_RETRIEVE, TOP_K_RERANK
+from config import TOP_K_RETRIEVE, TOP_K_RERANK, COLLECTION_NAME
 
 CHAT_SYSTEM_PROMPT = (
     "You are a helpful assistant that answers questions based strictly on the provided document sections. "
@@ -23,49 +25,50 @@ def embed(texts: list[str]) -> list[list[float]]:
     return [vec.tolist() for vec in state.embedder.embed(texts)]
 
 
-def _query_collection(q_vec, doc_ids: list[str] | None, include: list[str]) -> dict:
-    where_filter = {"doc_id": {"$in": doc_ids}} if doc_ids else None
-    n = min(TOP_K_RETRIEVE, state.collection.count() or 1)
-    return state.collection.query(
-        query_embeddings=[q_vec],
-        n_results=n,
-        where=where_filter,
-        include=include,
+def _search(q_vec: list[float], doc_ids: list[str] | None, limit: int):
+    query_filter = None
+    if doc_ids:
+        query_filter = Filter(
+            must=[FieldCondition(key="doc_id", match=MatchAny(any=doc_ids))]
+        )
+    response = state.qdrant_client.query_points(
+        collection_name=COLLECTION_NAME,
+        query=q_vec,
+        limit=limit,
+        query_filter=query_filter,
+        with_payload=True,
     )
+    return response.points
 
 
-def _build_context(docs: list, metas: list, dists: list | None = None):
-    top = list(zip(docs, metas, dists or [None] * len(docs)))[:TOP_K_RERANK]
+def _build_context(results):
+    top = results[:TOP_K_RERANK]
     context_parts, sources = [], []
-    for rank_i, (doc_text, meta, dist) in enumerate(top):
-        page_label = "Cover/Abstract" if meta["page"] == 0 else f"Page {meta['page']}"
-        context_parts.append(f"[Source {rank_i + 1} | {meta['filename']} | {page_label}]\n{doc_text}")
-        if dist is not None:
-            sources.append({
-                "rank": rank_i + 1,
-                "filename": meta["filename"],
-                "page": meta["page"],
-                "doc_id": meta["doc_id"],
-                "similarity": round(float(1 - dist), 4),
-                "cosine_distance": round(float(dist), 4),
-                "snippet": doc_text[:220] + ("…" if len(doc_text) > 220 else ""),
-            })
+    for rank_i, hit in enumerate(top):
+        p = hit.payload
+        page_label = "Cover/Abstract" if p["page"] == 0 else f"Page {p['page']}"
+        doc_text = p["text"]
+        context_parts.append(f"[Source {rank_i + 1} | {p['filename']} | {page_label}]\n{doc_text}")
+        sources.append({
+            "rank": rank_i + 1,
+            "filename": p["filename"],
+            "page": p["page"],
+            "doc_id": p["doc_id"],
+            "similarity": round(float(hit.score), 4),
+            "snippet": doc_text[:220] + ("…" if len(doc_text) > 220 else ""),
+        })
     return "\n\n---\n\n".join(context_parts), sources
 
 
 async def rag_stream(query: str, doc_ids: list[str] | None) -> AsyncIterator[str]:
     q_vec = embed([query])[0]
-    results = _query_collection(q_vec, doc_ids, ["documents", "metadatas", "distances"])
+    results = _search(q_vec, doc_ids, TOP_K_RETRIEVE)
 
-    docs_raw  = results["documents"][0]
-    metas_raw = results["metadatas"][0]
-    dists_raw = results["distances"][0]
-
-    if not docs_raw:
+    if not results:
         yield "data: " + json.dumps({"type": "error", "content": "No relevant content found."}) + "\n\n"
         return
 
-    context, sources = _build_context(docs_raw, metas_raw, dists_raw)
+    context, sources = _build_context(results)
     user_message = (
         f"Context from uploaded documents:\n\n{context}\n\n"
         f"---\n\nQuestion: {query}\n\n"
@@ -88,15 +91,12 @@ async def rag_stream(query: str, doc_ids: list[str] | None) -> AsyncIterator[str
 
 def rag_answer(query: str, doc_ids: list[str] | None = None) -> dict:
     q_vec = embed([query])[0]
-    results = _query_collection(q_vec, doc_ids, ["documents", "metadatas", "distances"])
+    results = _search(q_vec, doc_ids, TOP_K_RETRIEVE)
 
-    docs_raw  = results["documents"][0]
-    metas_raw = results["metadatas"][0]
-
-    if not docs_raw:
+    if not results:
         return {"answer": "No relevant content found.", "context": "", "retrieved_count": 0}
 
-    context, _ = _build_context(docs_raw, metas_raw)
+    context, _ = _build_context(results)
     user_message = (
         f"Context from uploaded documents:\n\n{context}\n\n"
         f"---\n\nQuestion: {query}\n\nAnswer in 1-2 sentences:"
@@ -108,4 +108,4 @@ def rag_answer(query: str, doc_ids: list[str] | None = None) -> dict:
         system=EVAL_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
     )
-    return {"answer": response.content[0].text, "context": context, "retrieved_count": len(docs_raw)}
+    return {"answer": response.content[0].text, "context": context, "retrieved_count": len(results)}
