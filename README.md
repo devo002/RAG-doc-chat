@@ -122,6 +122,22 @@ The `/evaluate` endpoint runs **5 hard-coded test questions** against the indexe
 
 ---
 
+## Challenges & How They Were Solved
+
+### 1. Memory crash on large PDF uploads
+**Problem:** When uploading a large PDF, the backend tried to embed all chunks at once. A 100-page document could produce 200+ chunks, and holding all those embedding vectors in memory simultaneously caused an out-of-memory crash.
+
+**Fix:** The upload pipeline was changed to process chunks in batches of 20. Each batch is embedded and upserted to Qdrant before the next batch is loaded, keeping memory usage flat regardless of document size (`backend/main.py`).
+
+---
+
+### 2. ChromaDB was too heavy for cloud deployment
+**Problem:** ChromaDB runs as a separate container with an in-memory store, consuming significant RAM — a problem on Railway's free tier where memory is limited.
+
+**Fix:** Replaced ChromaDB with **Qdrant Cloud** (managed, free tier). The vector database now lives entirely outside the deployment, removing one container and eliminating the memory overhead entirely.
+
+---
+
 ## Common Commands
 
 ```bash
