@@ -134,36 +134,34 @@ async def upload_pdfs(files: list[UploadFile] = File(...)):
             results.append({"filename": file.filename, "doc_id": doc_id, "status": "no_text_extracted"})
             continue
 
-        texts = [c["text"] for c in chunks_data]
-        embeddings = embed(texts)
-
-        points = [
-            PointStruct(
-                id=chunk_id(c["doc_id"], c["page"], c["chunk_index"]),
-                vector=emb,
-                payload={
-                    "doc_id": c["doc_id"],
-                    "filename": c["filename"],
-                    "page": c["page"],
-                    "chunk_index": c["chunk_index"],
-                    "text": c["text"],
-                    "char_count": len(c["text"]),
-                },
-            )
-            for c, emb in zip(chunks_data, embeddings)
-        ]
-
-        for i in range(0, len(points), 100):
-            state.qdrant_client.upsert(
-                collection_name=COLLECTION_NAME,
-                points=points[i:i + 100],
-            )
+        BATCH = 20
+        total = 0
+        for i in range(0, len(chunks_data), BATCH):
+            batch = chunks_data[i:i + BATCH]
+            embeddings = embed([c["text"] for c in batch])
+            points = [
+                PointStruct(
+                    id=chunk_id(c["doc_id"], c["page"], c["chunk_index"]),
+                    vector=emb,
+                    payload={
+                        "doc_id": c["doc_id"],
+                        "filename": c["filename"],
+                        "page": c["page"],
+                        "chunk_index": c["chunk_index"],
+                        "text": c["text"],
+                        "char_count": len(c["text"]),
+                    },
+                )
+                for c, emb in zip(batch, embeddings)
+            ]
+            state.qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
+            total += len(batch)
 
         results.append({
             "filename": file.filename,
             "doc_id": doc_id,
             "status": "indexed",
-            "chunks": len(chunks_data),
+            "chunks": total,
         })
 
     return results
