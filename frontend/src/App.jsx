@@ -310,7 +310,7 @@ export default function App() {
   useEffect(scrollToBottom, [messages]);
 
   const loadDocs = useCallback(async () => {
-    for (let attempt = 0; attempt < 10; attempt++) {
+    for (let attempt = 0; attempt < 40; attempt++) {
       try {
         const r = await fetch(`${API}/documents`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -318,7 +318,7 @@ export default function App() {
         setBackendReady(true);
         return;
       } catch {
-        if (attempt < 9) await new Promise((res) => setTimeout(res, 3000));
+        if (attempt < 39) await new Promise((res) => setTimeout(res, 5000));
       }
     }
   }, []);
@@ -438,7 +438,7 @@ export default function App() {
         <div style={S.sidebarHeader}>
           <div style={S.logo}><BookOpen size={20} /> RAG Chat</div>
           <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>
-            Claude · ChromaDB · FastAPI
+            Claude · Qdrant · FastAPI
           </div>
         </div>
 
