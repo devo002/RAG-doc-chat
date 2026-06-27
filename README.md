@@ -136,6 +136,25 @@ The `/evaluate` endpoint runs **5 hard-coded test questions** against the indexe
 
 **Fix:** Replaced ChromaDB with **Qdrant Cloud** (managed, free tier). The vector database now lives entirely outside the deployment, removing one container and eliminating the memory overhead entirely.
 
+### 3. Backend OOM crash on Railway at startup
+**Problem:** During startup the backend ran 32 warmup embeddings to pre-initialise the ONNX session. On Railway this spiked memory to 2.5 GB, causing a silent OOM kill before the service could accept any requests.
+
+**Fix:** Reduced the warmup to a single sentence (`backend/main.py`). Memory at startup dropped to under 800 MB and the container stopped crashing.
+
+---
+
+### 4. Railway PORT mismatch — "Application failed to respond"
+**Problem:** The Dockerfile hardcoded `--port 8000`, but Railway injects its own `$PORT` variable (e.g. 8080) and routes public traffic to that port. The app was listening on 8000 while Railway probed 8080, so every request returned "Application failed to respond".
+
+**Fix:** Changed the Dockerfile CMD to `uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}` and added `PORT=8000` to Railway's backend Variables so both the app and Railway's router agree on the same port (`backend/Dockerfile`).
+
+---
+
+### 5. nginx proxying to backend using wrong Host header
+**Problem:** After switching `BACKEND_URL` to the backend's public Railway URL, nginx was forwarding the frontend's hostname as the `Host` header. Railway's load balancer uses the Host header to route traffic, so it couldn't match the request to the backend service and returned 502/504 errors.
+
+**Fix:** Changed `proxy_set_header Host $host` to `proxy_set_header Host $proxy_host` in the nginx config so the Host header matches the backend's public URL (`frontend/nginx.conf`).
+
 ---
 
 ## Common Commands
