@@ -46,8 +46,7 @@ async def startup():
         "BAAI/bge-small-en-v1.5",
         providers=["CPUExecutionProvider"],
     )
-    _warmup = ["This is a warmup sentence to initialize the ONNX inference session properly."] * 32
-    list(state.embedder.embed(_warmup))
+    list(state.embedder.embed(["warmup"]))
     print("Embedding model ready.")
 
     print("Connecting to Qdrant…")
