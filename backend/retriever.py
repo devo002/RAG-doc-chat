@@ -41,6 +41,36 @@ def _search(q_vec: list[float], doc_ids: list[str] | None, limit: int):
     return response.points
 
 
+def _rerank(query: str, results: list) -> list:
+    if len(results) <= TOP_K_RERANK:
+        return results
+    chunks = "\n\n".join(
+        f"[{i}] {hit.payload['text'][:400]}" for i, hit in enumerate(results)
+    )
+    prompt = (
+        f'Query: "{query}"\n\n'
+        f"Rank these {len(results)} chunks by relevance to the query.\n"
+        f"Return ONLY a JSON array of indices, most relevant first. Example: [3,0,7,2,1]\n\n"
+        f"{chunks}\n\nJSON array:"
+    )
+    try:
+        response = state.anthropic_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=100,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        indices = json.loads(response.content[0].text.strip())
+        seen: set[int] = set()
+        valid = [
+            i for i in indices
+            if isinstance(i, int) and 0 <= i < len(results) and not (i in seen or seen.add(i))  # type: ignore[func-returns-value]
+        ]
+        missing = [i for i in range(len(results)) if i not in seen]
+        return [results[i] for i in valid + missing]
+    except Exception:
+        return results
+
+
 def _build_context(results):
     top = results[:TOP_K_RERANK]
     context_parts, sources = [], []
@@ -68,7 +98,7 @@ async def rag_stream(query: str, doc_ids: list[str] | None) -> AsyncIterator[str
         yield "data: " + json.dumps({"type": "error", "content": "No relevant content found."}) + "\n\n"
         return
 
-    context, sources = _build_context(results)
+    context, sources = _build_context(_rerank(query, results))
     user_message = (
         f"Context from uploaded documents:\n\n{context}\n\n"
         f"---\n\nQuestion: {query}\n\n"
@@ -96,7 +126,7 @@ def rag_answer(query: str, doc_ids: list[str] | None = None) -> dict:
     if not results:
         return {"answer": "No relevant content found.", "context": "", "retrieved_count": 0}
 
-    context, _ = _build_context(results)
+    context, _ = _build_context(_rerank(query, results))
     user_message = (
         f"Context from uploaded documents:\n\n{context}\n\n"
         f"---\n\nQuestion: {query}\n\nAnswer in 1-2 sentences:"
