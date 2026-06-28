@@ -1,4 +1,5 @@
 import hashlib
+from pathlib import Path
 
 import anthropic
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -20,7 +21,7 @@ from config import (
 )
 from chunker import pdf_to_chunks, chunk_id
 from retriever import embed, rag_stream
-from evaluator import run_evaluation
+from evaluator import run_evaluation_stream
 
 # ── App setup ──────────────────────────────────
 app = FastAPI(title="RAG Document Chat API", version="2.0.0")
@@ -67,6 +68,32 @@ async def startup():
     )
 
     state.anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    # Auto-index the bundled benchmark document
+    eval_pdf = Path(__file__).parent / "testdoc.pdf"
+    if eval_pdf.exists():
+        content = eval_pdf.read_bytes()
+        doc_id = hashlib.sha256(content).hexdigest()[:16]
+        if not _doc_exists(doc_id):
+            print("Indexing benchmark document…")
+            chunks_data = pdf_to_chunks(eval_pdf, doc_id, "testdoc.pdf")
+            for i in range(0, len(chunks_data), 20):
+                batch = chunks_data[i:i + 20]
+                embeddings = embed([c["text"] for c in batch])
+                points = [
+                    PointStruct(
+                        id=chunk_id(c["doc_id"], c["page"], c["chunk_index"]),
+                        vector=emb,
+                        payload={"doc_id": c["doc_id"], "filename": c["filename"],
+                                 "page": c["page"], "chunk_index": c["chunk_index"],
+                                 "text": c["text"], "char_count": len(c["text"])},
+                    )
+                    for c, emb in zip(batch, embeddings)
+                ]
+                state.qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
+        state.eval_doc_id = doc_id
+        print(f"Benchmark document ready (id={doc_id})")
+
     print("All services ready ✓")
 
 
@@ -194,8 +221,11 @@ async def chat(req: ChatRequest):
 
 
 @app.get("/evaluate")
-def evaluate(doc_ids: str | None = None):
-    if _doc_count() == 0:
-        raise HTTPException(status_code=400, detail="No documents indexed yet.")
-    selected = doc_ids.split(",") if doc_ids else None
-    return run_evaluation(selected)
+def evaluate():
+    if not state.eval_doc_id:
+        raise HTTPException(status_code=503, detail="Benchmark document not available.")
+    return StreamingResponse(
+        run_evaluation_stream([state.eval_doc_id]),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

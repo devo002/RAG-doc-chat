@@ -178,33 +178,45 @@ function Message({ msg }) {
 }
 
 function EvalPanel({ onClose, selectedDocs }) {
-  const [data, setData] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  const [overall, setOverall] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [expanded, setExpanded] = useState({});
   const [scopeAtRun, setScopeAtRun] = useState(null);
 
   const runEval = useCallback(() => {
     setLoading(true);
-    setData(null);
+    setQuestions([]);
+    setOverall(null);
     setError(null);
-    setExpanded({});
-    const scope = selectedDocs && selectedDocs.length > 0 ? [...selectedDocs] : null;
-    setScopeAtRun(scope);
-    const url = scope ? `${API}/evaluate?doc_ids=${scope.join(",")}` : `${API}/evaluate`;
-    fetch(url)
-      .then((r) => {
-        if (!r.ok) return r.json().then((e) => Promise.reject(e.detail));
-        return r.json();
-      })
-      .then(setData)
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+    setScopeAtRun(null);
+    const url = `${API}/evaluate`;
+
+    fetch(url).then(async (r) => {
+      if (!r.ok) { const e = await r.json(); throw new Error(e.detail); }
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6));
+          if (event.type === "question") setQuestions((prev) => [...prev, event.result]);
+          if (event.type === "done") { setOverall(event.overall); setLoading(false); }
+        }
+      }
+    }).catch((e) => { setError(String(e)); setLoading(false); });
   }, [selectedDocs]);
 
   useEffect(() => { runEval(); }, []);
 
-  const toggle = (id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  const done = questions.length;
+  const total = questions[0]?.total ?? 10;
 
   return (
     <div style={S.evalPanel}>
@@ -214,77 +226,80 @@ function EvalPanel({ onClose, selectedDocs }) {
       </div>
       <div style={{ padding: "6px 16px 8px", borderBottom: "1px solid #2d3148", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 11, color: "#475569" }}>
-          {scopeAtRun ? `Scoped to ${scopeAtRun.length} doc(s)` : "All documents"}
+          Benchmarked on: Attention Is All You Need
         </span>
         <button
           onClick={runEval}
           disabled={loading}
           style={{ fontSize: 11, padding: "3px 10px", background: "#1e2130", border: "1px solid #2d3148", borderRadius: 6, color: loading ? "#475569" : "#7c6cfa", cursor: loading ? "default" : "pointer" }}
         >
-          {loading ? "Running…" : "Re-run"}
+          {loading ? `${done}/${total}…` : "Re-run"}
         </button>
       </div>
       <div style={S.evalBody}>
-        {loading && (
+        {loading && done === 0 && (
           <div style={{ textAlign: "center", padding: 24, color: "#64748b" }}>
             <Loader2 size={24} style={{ animation: "spin 1s linear infinite" }} />
-            <div style={{ marginTop: 10, fontSize: 12 }}>Asking Claude each question…</div>
+            <div style={{ marginTop: 10, fontSize: 12 }}>Starting evaluation…</div>
           </div>
         )}
         {error && <div style={{ color: "#f87171", fontSize: 13 }}>{error}</div>}
-        {data && (
-          <>
-            <div style={S.overallBox}>
-              <div style={{ color: "#60a5fa", fontWeight: 700, marginBottom: 8 }}>Overall RAGAS Scores</div>
-              <div style={S.scoreRow}>
-                <span style={{ fontSize: 13 }}>RAGAS Score</span>
-                <span style={S.scorePill(data.overall.avg_ragas_score)}>
-                  {(data.overall.avg_ragas_score * 100).toFixed(0)}%
-                </span>
-              </div>
-              <div style={S.scoreRow}>
-                <span style={{ fontSize: 12, color: "#94a3b8" }}>Faithfulness</span>
-                <span style={{ fontSize: 12, color: "#94a3b8" }}>{(data.overall.avg_faithfulness * 100).toFixed(0)}%</span>
-              </div>
-              <div style={S.scoreRow}>
-                <span style={{ fontSize: 12, color: "#94a3b8" }}>Answer Relevancy</span>
-                <span style={{ fontSize: 12, color: "#94a3b8" }}>{(data.overall.avg_answer_relevancy * 100).toFixed(0)}%</span>
-              </div>
+        {overall && (
+          <div style={S.overallBox}>
+            <div style={{ color: "#60a5fa", fontWeight: 700, marginBottom: 8 }}>Overall RAGAS Scores</div>
+            <div style={S.scoreRow}>
+              <span style={{ fontSize: 13 }}>RAGAS Score</span>
+              <span style={S.scorePill(overall.avg_ragas_score)}>{(overall.avg_ragas_score * 100).toFixed(0)}%</span>
             </div>
-            {data.questions.map((q) => (
-              <div key={q.id} style={S.scoreCard}>
-                <div style={S.scoreQ}>Q{q.id}: {q.question}</div>
-                <div style={S.scoreRow}>
-                  <span style={{ fontSize: 12, color: "#64748b" }}>RAGAS Score</span>
-                  <span style={S.scorePill(q.ragas_score)}>
-                    {(q.ragas_score * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <div style={S.scoreRow}>
-                  <span style={{ fontSize: 11, color: "#475569" }}>Faithfulness</span>
-                  <span style={{ fontSize: 11, color: "#94a3b8" }}>{(q.faithfulness * 100).toFixed(0)}%</span>
-                </div>
-                <div style={S.scoreRow}>
-                  <span style={{ fontSize: 11, color: "#475569" }}>Answer Relevancy</span>
-                  <span style={{ fontSize: 11, color: "#94a3b8" }}>{(q.answer_relevancy * 100).toFixed(0)}%</span>
-                </div>
-                <button
-                  onClick={() => toggle(q.id)}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#7c6cfa", fontSize: 11, marginTop: 8, padding: 0 }}
-                >
-                  {expanded[q.id] ? "▲ Hide answer" : "▼ Show answer"}
-                </button>
-                {expanded[q.id] && (
-                  <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6, lineHeight: 1.6, whiteSpace: "pre-wrap", borderTop: "1px solid #2d3148", paddingTop: 8 }}>
-                    {q.answer}
-                  </div>
-                )}
-                <div style={{ fontSize: 11, color: "#475569", marginTop: 6 }}>
-                  {q.retrieved_count} chunks retrieved
-                </div>
+            <div style={S.scoreRow}>
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>Faithfulness</span>
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>{(overall.avg_faithfulness * 100).toFixed(0)}%</span>
+            </div>
+            <div style={S.scoreRow}>
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>Answer Relevancy</span>
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>{(overall.avg_answer_relevancy * 100).toFixed(0)}%</span>
+            </div>
+            <div style={S.scoreRow}>
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>Correctness</span>
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>{(overall.avg_correctness * 100).toFixed(0)}%</span>
+            </div>
+          </div>
+        )}
+        {questions.map((q) => (
+          <div key={q.id} style={S.scoreCard}>
+            <div style={S.scoreQ}>Q{q.id}/{total}: {q.question}</div>
+            <div style={{ fontSize: 12, color: "#94a3b8", margin: "8px 0", lineHeight: 1.6, borderLeft: "2px solid #2d3148", paddingLeft: 8 }}>
+              {q.answer}
+            </div>
+            {q.ground_truth && (
+              <div style={{ fontSize: 11, color: "#cbd5e1", margin: "4px 0 8px", lineHeight: 1.5, borderLeft: "2px solid #4ade80", paddingLeft: 8 }}>
+                <span style={{ color: "#4ade80", fontWeight: 700 }}>Reference: </span>{q.ground_truth}
               </div>
-            ))}
-          </>
+            )}
+            <div style={S.scoreRow}>
+              <span style={{ fontSize: 12, color: "#64748b" }}>RAGAS Score</span>
+              <span style={S.scorePill(q.ragas_score)}>{(q.ragas_score * 100).toFixed(0)}%</span>
+            </div>
+            <div style={S.scoreRow}>
+              <span style={{ fontSize: 11, color: "#475569" }}>Faithfulness</span>
+              <span style={{ fontSize: 11, color: "#94a3b8" }}>{(q.faithfulness * 100).toFixed(0)}%</span>
+            </div>
+            <div style={S.scoreRow}>
+              <span style={{ fontSize: 11, color: "#475569" }}>Answer Relevancy</span>
+              <span style={{ fontSize: 11, color: "#94a3b8" }}>{(q.answer_relevancy * 100).toFixed(0)}%</span>
+            </div>
+            <div style={S.scoreRow}>
+              <span style={{ fontSize: 11, color: "#475569" }}>Correctness</span>
+              <span style={{ fontSize: 11, color: "#94a3b8" }}>{(q.correctness * 100).toFixed(0)}%</span>
+            </div>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{q.retrieved_count} chunks retrieved</div>
+          </div>
+        ))}
+        {loading && done > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", color: "#64748b", fontSize: 12 }}>
+            <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+            Running question {done + 1}/{total}…
+          </div>
         )}
       </div>
     </div>
@@ -543,11 +558,11 @@ export default function App() {
         <button style={S.evalBtn} onClick={() => setShowEval((v) => !v)}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <BarChart2 size={18} />
-            <span>{showEval ? "Hide Eval Scores" : "Show Eval Scores"}</span>
+            <span>{showEval ? "Hide RAG Benchmark" : "Run RAG Benchmark"}</span>
           </div>
           {!showEval && (
             <span style={{ fontSize: 14, fontWeight: 700, color: "#e9d5ff" }}>
-              Click to run 5 test questions & see scores
+              10 questions · Attention Is All You Need
             </span>
           )}
         </button>

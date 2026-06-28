@@ -1,0 +1,42 @@
+[
+  {
+    "question": "How many attention heads does the Transformer use in multi-head attention?",
+    "ground_truth": "The Transformer uses 8 parallel attention heads."
+  },
+  {
+    "question": "What is the model dimensionality (d_model) of the base Transformer?",
+    "ground_truth": "The base model uses a dimensionality of 512."
+  },
+  {
+    "question": "How many encoder and decoder layers does the base Transformer have?",
+    "ground_truth": "The base Transformer has 6 encoder layers and 6 decoder layers."
+  },
+  {
+    "question": "What BLEU score did the Transformer achieve on WMT 2014 English-to-German translation?",
+    "ground_truth": "The Transformer achieved 28.4 BLEU on WMT 2014 English-to-German."
+  },
+  {
+    "question": "What BLEU score did the Transformer achieve on WMT 2014 English-to-French translation?",
+    "ground_truth": "The Transformer achieved 41.0 BLEU on WMT 2014 English-to-French."
+  },
+  {
+    "question": "What optimizer was used to train the Transformer and what were the beta values?",
+    "ground_truth": "The Adam optimizer was used with beta1=0.9, beta2=0.98, and epsilon=1e-9."
+  },
+  {
+    "question": "What is the dimensionality of the inner feed-forward layer in the base model?",
+    "ground_truth": "The inner feed-forward layer has dimensionality of 2048."
+  },
+  {
+    "question": "What dropout rate was applied in the base Transformer model?",
+    "ground_truth": "A dropout rate of 0.1 was applied to the output of each sub-layer."
+  },
+  {
+    "question": "How long did the base Transformer model take to train and on what hardware?",
+    "ground_truth": "The base model was trained for 100,000 steps taking about 12 hours on 8 NVIDIA P100 GPUs."
+  },
+  {
+    "question": "What problem does positional encoding solve in the Transformer?",
+    "ground_truth": "Since the Transformer contains no recurrence or convolution, positional encodings are added to inject information about the relative or absolute position of tokens in the sequence."
+  }
+]

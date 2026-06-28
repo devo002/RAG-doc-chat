@@ -5,3 +5,4 @@ import anthropic
 embedder: TextEmbedding = None
 qdrant_client: QdrantClient = None
 anthropic_client: anthropic.Anthropic = None
+eval_doc_id: str | None = None

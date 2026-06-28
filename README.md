@@ -78,7 +78,7 @@ Type a question and press Enter or click Send. The answer streams in real time w
 Click a document name in the sidebar to filter the chat to that document only. Click again to deselect.
 
 ### 4. Run the RAG Evaluation
-Click the **Show Eval Scores** button at the bottom of the sidebar. It runs 5 test questions against your indexed documents and scores each answer using two RAGAS metrics — **Faithfulness** and **Answer Relevancy**.
+Click **Run RAG Benchmark** at the bottom of the sidebar. It streams 10 questions one by one against the bundled benchmark document (*Attention Is All You Need*) and scores each answer live using two RAGAS metrics — **Faithfulness** and **Answer Relevancy**. Results are independent of any documents you have uploaded.
 
 ---
 
@@ -96,13 +96,22 @@ This approach keeps sentences intact, avoids mid-word cuts, and produces consist
 
 ## Evaluation — RAGAS-Inspired Scoring
 
-The `/evaluate` endpoint runs **5 hard-coded test questions** against the indexed documents and uses **Claude as an LLM judge** to score two metrics per question:
+The `/evaluate` endpoint benchmarks the full RAG pipeline against a fixed document so results are always comparable. The benchmark document — **"Attention Is All You Need" (Vaswani et al., 2017)** — is bundled with the backend and indexed automatically on startup.
+
+**10 domain-specific questions** cover concrete facts from the paper: number of attention heads, model dimensions, encoder/decoder layer counts, WMT translation BLEU scores, optimizer hyperparameters, dropout rate, training time, and the purpose of positional encoding.
+
+Ground truth answers for all 10 questions are stored in `backend/eval_data.json` and used by the **Correctness** metric.
+
+Each answer is scored by **Claude acting as an LLM judge** across three metrics in a single call:
 
 | Metric | What it measures |
 |---|---|
-| **Faithfulness** | Is the answer grounded in the retrieved context? |
-| **Answer Relevancy** | Does the answer actually address the question? |
-| **RAGAS Score** | Simple average of the two above |
+| **Faithfulness** | Are all claims in the answer supported by the retrieved chunks? |
+| **Answer Relevancy** | Does the answer actually address the question asked? |
+| **Correctness** | Does the answer match the ground truth stored in `eval_data.json`? |
+| **RAGAS Score** | Average of all three above |
+
+The UI shows each question's generated answer alongside the reference ground truth so you can spot where the pipeline goes wrong. Results stream in one question at a time. Scores can vary slightly between runs because vector retrieval and LLM reranking are non-deterministic — a borderline chunk may rank in or out, which shifts the answer.
 
 ---
 
