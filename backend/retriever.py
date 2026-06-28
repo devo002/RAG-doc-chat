@@ -1,4 +1,6 @@
 import json
+import math
+from collections import Counter
 from typing import AsyncIterator
 
 from qdrant_client.models import Filter, FieldCondition, MatchAny
@@ -39,6 +41,38 @@ def _search(q_vec: list[float], doc_ids: list[str] | None, limit: int):
         with_payload=True,
     )
     return response.points
+
+
+def _bm25_scores(query: str, hits: list, k1: float = 1.5, b: float = 0.75) -> list[float]:
+    """Pure-Python BM25Okapi — no extra dependencies, negligible memory."""
+    corpus = [h.payload["text"].lower().split() for h in hits]
+    q_tokens = query.lower().split()
+    N = len(corpus)
+    avg_dl = sum(len(d) for d in corpus) / N if N else 1
+    scores = []
+    for doc in corpus:
+        dl = len(doc)
+        tf_map = Counter(doc)
+        score = 0.0
+        for term in q_tokens:
+            tf = tf_map.get(term, 0)
+            df = sum(1 for d in corpus if term in Counter(d))
+            idf = math.log((N - df + 0.5) / (df + 0.5) + 1)
+            score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl / avg_dl))
+        scores.append(score)
+    return scores
+
+
+def _hybrid_fuse(query: str, hits: list) -> list:
+    """Reciprocal Rank Fusion of dense + BM25 rankings (k=60 standard constant)."""
+    if not hits:
+        return hits
+    bm25 = _bm25_scores(query, hits)
+    bm25_order = sorted(range(len(hits)), key=lambda i: bm25[i], reverse=True)
+    bm25_rank = {orig: rank for rank, orig in enumerate(bm25_order)}
+    K = 60
+    rrf = [1 / (K + i) + 1 / (K + bm25_rank[i]) for i in range(len(hits))]
+    return [hits[i] for i in sorted(range(len(hits)), key=lambda i: rrf[i], reverse=True)]
 
 
 def _rerank(query: str, results: list) -> list:
@@ -98,7 +132,7 @@ async def rag_stream(query: str, doc_ids: list[str] | None) -> AsyncIterator[str
         yield "data: " + json.dumps({"type": "error", "content": "No relevant content found."}) + "\n\n"
         return
 
-    context, sources = _build_context(_rerank(query, results))
+    context, sources = _build_context(_rerank(query, _hybrid_fuse(query, results)))
     user_message = (
         f"Context from uploaded documents:\n\n{context}\n\n"
         f"---\n\nQuestion: {query}\n\n"
@@ -126,7 +160,7 @@ def rag_answer(query: str, doc_ids: list[str] | None = None) -> dict:
     if not results:
         return {"answer": "No relevant content found.", "context": "", "retrieved_count": 0}
 
-    context, _ = _build_context(_rerank(query, results))
+    context, _ = _build_context(_rerank(query, _hybrid_fuse(query, results)))
     user_message = (
         f"Context from uploaded documents:\n\n{context}\n\n"
         f"---\n\nQuestion: {query}\n\nAnswer in 1-2 sentences:"
