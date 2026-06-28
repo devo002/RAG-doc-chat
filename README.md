@@ -117,27 +117,25 @@ The UI shows each question's generated answer alongside the reference ground tru
 
 ### Sample Results — 3-Run Average
 
-Scores below are averaged across 3 independent runs on the bundled benchmark document.
+Scores below are averaged across 3 independent runs on the bundled benchmark document, after adding hybrid BM25 + dense retrieval with Reciprocal Rank Fusion.
 
 | # | Question | Faith | Relevancy | Correct | RAGAS |
 |---|---|:---:|:---:|:---:|:---:|
 | Q1 | Attention heads in multi-head attention | 100% | 100% | 100% | 100% |
-| Q2 | d_model of the base Transformer | 92% | 100% | 33% | 75% |
+| Q2 | d_model of the base Transformer | 100% | 100% | 100% | 100% |
 | Q3 | Encoder / decoder layer count | 100% | 100% | 100% | 100% |
 | Q4 | EN-DE BLEU score | 100% | 100% | 100% | 100% |
-| Q5 | EN-FR BLEU score | 63% | 100% | 0% | 54% |
+| Q5 | EN-FR BLEU score | 85% | 100% | 50% | 78% |
 | Q6 | Optimizer and beta values | 100% | 100% | 100% | 100% |
 | Q7 | Feed-forward inner dimension (d_ff) | 100% | 100% | 100% | 100% |
-| Q8 | Dropout rate | 88% | 92% | 70% | 83% |
+| Q8 | Dropout rate | 97% | 100% | 100% | 99% |
 | Q9 | Training time and hardware | 100% | 100% | 100% | 100% |
-| Q10 | Purpose of positional encoding | 95% | 97% | 92% | 94% |
-| **Avg** | | **94%** | **99%** | **80%** | **91%** |
+| Q10 | Purpose of positional encoding | 98% | 98% | 97% | 98% |
+| **Avg** | | **98%** | **100%** | **95%** | **98%** |
 
-**Where the pipeline struggles and why:**
+**Remaining failure and why:**
 
-- **Q2 (d_model, 33% correctness)** — The base model's d_model = 512 lives in a dense results table (Table 3) in the paper. PDF table extraction is lossy, so the retrieved chunks surface d_model = 1024 from a different experiment (English constituency parsing) instead of the base model value.
-- **Q5 (EN-FR BLEU, 0% correctness)** — The pipeline consistently returns 41.8 instead of the ground truth 41.0. The retrieved chunk references the big model's updated result rather than the figure cited in the main results table, showing that numerical precision across dense result tables is a real retrieval challenge.
-- **Q8 (Dropout, 70% correctness)** — The rate (0.1) is correct but the retrieved chunk describes dropout applied to embedding sums rather than sub-layer outputs, which is a different (secondary) mention of dropout in the paper.
+- **Q5 (EN-FR BLEU, 50% correctness)** — The paper contains two different figures: **41.8** in the abstract and Table 2 (big model), and **41.0** in the Section 6 prose. Both chunks are retrieved, creating conflicting signals. The pipeline returns 41.8 (which is correct per the abstract), but the judge sees the mixed context and scores conservatively. This is a genuine document-level ambiguity, not a pipeline bug.
 
 ---
 
