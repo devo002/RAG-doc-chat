@@ -28,8 +28,9 @@ def ragas_score(question: str, context: str, answer: str, ground_truth: str) -> 
         f'{{\"faithfulness\": <float>, \"answer_relevancy\": <float>, \"correctness\": <float>}}'
     )
     response = state.anthropic_client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5-20251001",
         max_tokens=80,
+        temperature=0,
         messages=[{"role": "user", "content": prompt}],
     )
     text = response.content[0].text.strip()
