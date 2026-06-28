@@ -113,6 +113,32 @@ Each answer is scored by **Claude acting as an LLM judge** across three metrics 
 
 The UI shows each question's generated answer alongside the reference ground truth so you can spot where the pipeline goes wrong. Results stream in one question at a time. Scores can vary slightly between runs because vector retrieval and LLM reranking are non-deterministic — a borderline chunk may rank in or out, which shifts the answer.
 
+> **Judge bias note:** Claude Sonnet generates the answers; Claude Haiku (temperature = 0) acts as the judge. Using a smaller, separate model with fixed temperature reduces self-grading leniency.
+
+### Sample Results — 3-Run Average
+
+Scores below are averaged across 3 independent runs on the bundled benchmark document.
+
+| # | Question | Faith | Relevancy | Correct | RAGAS |
+|---|---|:---:|:---:|:---:|:---:|
+| Q1 | Attention heads in multi-head attention | 100% | 100% | 100% | 100% |
+| Q2 | d_model of the base Transformer | 92% | 100% | 33% | 75% |
+| Q3 | Encoder / decoder layer count | 100% | 100% | 100% | 100% |
+| Q4 | EN-DE BLEU score | 100% | 100% | 100% | 100% |
+| Q5 | EN-FR BLEU score | 63% | 100% | 0% | 54% |
+| Q6 | Optimizer and beta values | 100% | 100% | 100% | 100% |
+| Q7 | Feed-forward inner dimension (d_ff) | 100% | 100% | 100% | 100% |
+| Q8 | Dropout rate | 88% | 92% | 70% | 83% |
+| Q9 | Training time and hardware | 100% | 100% | 100% | 100% |
+| Q10 | Purpose of positional encoding | 95% | 97% | 92% | 94% |
+| **Avg** | | **94%** | **99%** | **80%** | **91%** |
+
+**Where the pipeline struggles and why:**
+
+- **Q2 (d_model, 33% correctness)** — The base model's d_model = 512 lives in a dense results table (Table 3) in the paper. PDF table extraction is lossy, so the retrieved chunks surface d_model = 1024 from a different experiment (English constituency parsing) instead of the base model value.
+- **Q5 (EN-FR BLEU, 0% correctness)** — The pipeline consistently returns 41.8 instead of the ground truth 41.0. The retrieved chunk references the big model's updated result rather than the figure cited in the main results table, showing that numerical precision across dense result tables is a real retrieval challenge.
+- **Q8 (Dropout, 70% correctness)** — The rate (0.1) is correct but the retrieved chunk describes dropout applied to embedding sums rather than sub-layer outputs, which is a different (secondary) mention of dropout in the paper.
+
 ---
 
 ## Tech Stack

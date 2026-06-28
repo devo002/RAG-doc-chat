@@ -17,7 +17,7 @@
   },
   {
     "question": "What BLEU score did the Transformer achieve on WMT 2014 English-to-French translation?",
-    "ground_truth": "The Transformer achieved 41.0 BLEU on WMT 2014 English-to-French."
+    "ground_truth": "The Transformer (big) achieved 41.8 BLEU on WMT 2014 English-to-French."
   },
   {
     "question": "What optimizer was used to train the Transformer and what were the beta values?",
