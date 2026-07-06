@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Upload, FileText, Send, Trash2, BarChart2, ChevronDown,
-  ChevronUp, Loader2, CheckCircle, AlertCircle, BookOpen, X
+  Upload, FileText, Send, Trash2, BarChart2,
+  Loader2, BookOpen, X
 } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL || "/api";
@@ -141,7 +141,7 @@ function SourcesAccordion({ sources }) {
         onClick={() => setOpen((v) => !v)}
         style={{ background: "none", border: "none", cursor: "pointer", color: "#7c6cfa", fontWeight: 600, fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}
       >
-        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        <span style={{ fontSize: 10 }}>{open ? "▲" : "▼"}</span>
         {sources.length} source{sources.length !== 1 ? "s" : ""} retrieved
       </button>
       {open && (
@@ -170,7 +170,7 @@ function Message({ msg }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
       <div style={S.bubble(msg.role)}>
-        {msg.content || <Loader2 size={16} className="spin" style={{ animation: "spin 1s linear infinite" }} />}
+        {msg.content || <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid #7c6cfa", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />}
       </div>
       {msg.role === "assistant" && <SourcesAccordion sources={msg.sources} />}
     </div>
