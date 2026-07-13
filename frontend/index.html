@@ -133,10 +133,13 @@ body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-seri
 <main id="main">
   <div id="chat-hdr">Upload a PDF to start chatting</div>
   <div id="messages">
-    <div id="empty" style="text-align:center;color:#475569;margin-top:60px;display:flex;flex-direction:column;align-items:center;gap:12px">
-      <div style="font-size:48px">&#128218;</div>
-      <div style="font-size:15px">Upload a PDF and start asking questions</div>
-      <div style="font-size:13px">Answers will include source citations</div>
+    <div id="empty" style="width:100%;max-width:640px;margin:32px auto 0;padding:0 24px;display:flex;flex-direction:column;gap:0">
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#a78bfa;background:#1a1730;border:1px solid #4c3a8a;border-radius:99px;padding:5px 14px">
+          &#9654; Live demo &mdash; upload your own PDF to start chatting
+        </div>
+      </div>
+      <div id="demo-chat" style="display:flex;flex-direction:column;gap:16px"></div>
     </div>
   </div>
   <div class="ibar">
@@ -331,6 +334,7 @@ function doUpload(files) {
 
 /* ── Messages ── */
 function rmEmpty() {
+  stopDemo();
   if ($empty && $empty.parentNode) $empty.parentNode.removeChild($empty);
   $empty = null;
 }
@@ -544,6 +548,207 @@ $evalCls.addEventListener('click', function() {
     '<div class="eval-btn-sub">10 questions &middot; Attention Is All You Need</div>';
 });
 $rerun.addEventListener('click', runEval);
+
+/* ── Demo Animation ── */
+var DEMO_QA = [
+  {
+    q: "What is the core idea behind the Transformer architecture?",
+    a: "The Transformer relies entirely on self-attention mechanisms, dispensing with recurrence and convolution. Multi-head attention lets the model jointly attend to information at different positions — enabling parallel processing and capturing long-range dependencies far more effectively than RNNs.",
+    sources: [
+      { rank: 1, filename: "attention_paper.pdf", page: 2, similarity: "0.94", snippet: "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely." },
+      { rank: 2, filename: "attention_paper.pdf", page: 5, similarity: "0.87", snippet: "Multi-Head Attention allows the model to jointly attend to information from different representation subspaces at different positions." }
+    ]
+  },
+  {
+    q: "How does retrieval-augmented generation reduce hallucinations?",
+    a: "RAG grounds each response in retrieved document chunks, giving the model factual context at inference time. Instead of relying solely on parametric memory, the LLM cites specific passages — making answers traceable and verifiable without retraining the underlying model.",
+    sources: [
+      { rank: 1, filename: "your_document.pdf", page: 1, similarity: "0.91", snippet: "Retrieval-Augmented Generation combines parametric and non-parametric memory for knowledge-intensive NLP tasks..." },
+      { rank: 2, filename: "your_document.pdf", page: 3, similarity: "0.83", snippet: "The retriever fetches relevant documents which are used as conditioning context for the generator..." }
+    ]
+  }
+];
+
+var DEMO_EVAL = {
+  questions: [
+    { id: 1, question: "What problem does self-attention solve compared to RNNs?",
+      answer: "Self-attention processes all positions simultaneously, solving the sequential bottleneck of RNNs and enabling far better parallelization during training.",
+      faithfulness: 0.94, answer_relevancy: 0.91, correctness: 0.88 },
+    { id: 2, question: "How many attention heads does the base Transformer use?",
+      answer: "The base model uses 8 parallel attention heads, allowing the model to jointly attend to information from different representation subspaces.",
+      faithfulness: 0.97, answer_relevancy: 0.89, correctness: 0.93 },
+    { id: 3, question: "What is the role of positional encodings?",
+      answer: "Since the Transformer has no recurrence, positional encodings inject information about each token's position in the sequence so the model can reason about order.",
+      faithfulness: 0.88, answer_relevancy: 0.86, correctness: 0.84 }
+  ],
+  overall: { ragas: 0.90, faithfulness: 0.93, answer_relevancy: 0.89, correctness: 0.88 }
+};
+
+var demoTimer = null;
+var demoIdx = 0;
+
+function stopDemo() {
+  if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+}
+
+function fadeDemo(dc, done) {
+  if (!dc) return;
+  dc.style.transition = 'opacity 0.6s';
+  dc.style.opacity = '0';
+  demoTimer = setTimeout(done, 700);
+}
+
+function startDemo() {
+  if (!$empty || !$empty.parentNode) return;
+  stopDemo();
+  var dc = document.getElementById('demo-chat');
+  if (!dc) return;
+  dc.style.opacity = '1';
+  dc.style.transition = '';
+  dc.innerHTML = '';
+
+  var phase = demoIdx % 3;
+  demoIdx++;
+  if (phase < 2) {
+    runDemoQA(DEMO_QA[phase], startDemo);
+  } else {
+    runDemoEval(startDemo);
+  }
+}
+
+function runDemoQA(qa, done) {
+  if (!$empty || !$empty.parentNode) return;
+  var dc = document.getElementById('demo-chat');
+  if (!dc) return;
+  typeWriterUser(dc, qa.q, function() {
+    demoTimer = setTimeout(function() {
+      if (!$empty || !$empty.parentNode) return;
+      var pair = createDemoAsst(dc);
+      demoTimer = setTimeout(function() {
+        streamDemoWords(pair.b, qa.a, function() {
+          if (!$empty || !$empty.parentNode) return;
+          addSources(pair.w, qa.sources);
+          scrollMsgs();
+          demoTimer = setTimeout(function() {
+            fadeDemo(document.getElementById('demo-chat'), done);
+          }, 5000);
+        });
+      }, 600);
+    }, 400);
+  });
+}
+
+function runDemoEval(done) {
+  if (!$empty || !$empty.parentNode) return;
+  var dc = document.getElementById('demo-chat');
+  if (!dc) return;
+
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'background:#0f1835;border:1px solid #2563eb;border-radius:10px;padding:12px 14px;font-size:13px;font-weight:700;color:#60a5fa;display:flex;align-items:center;gap:8px;margin-bottom:4px';
+  hdr.innerHTML = '&#128202; RAG Benchmark &mdash; <span style="color:#94a3b8;font-weight:400;margin-left:4px">Attention Is All You Need</span>';
+  dc.appendChild(hdr);
+  scrollMsgs();
+
+  var qi = 0;
+  function nextQ() {
+    if (!$empty || !$empty.parentNode) return;
+    if (qi >= DEMO_EVAL.questions.length) { showOverall(); return; }
+    var q = DEMO_EVAL.questions[qi++];
+    var card = document.createElement('div');
+    card.className = 'scard';
+    card.style.cssText = 'opacity:0;transition:opacity 0.4s';
+    card.innerHTML =
+      '<div class="sq">Q' + q.id + '/3: ' + esc(q.question) + '</div>' +
+      '<div class="sans">' + esc(q.answer) + '</div>' +
+      '<div class="srow"><span style="font-size:12px;color:#64748b">RAGAS Score</span>' + pill((q.faithfulness + q.answer_relevancy + q.correctness) / 3) + '</div>' +
+      '<div class="srow"><span style="font-size:11px;color:#475569">Faithfulness</span><span class="sval">' + Math.round(q.faithfulness * 100) + '%</span></div>' +
+      '<div class="srow"><span style="font-size:11px;color:#475569">Answer Relevancy</span><span class="sval">' + Math.round(q.answer_relevancy * 100) + '%</span></div>' +
+      '<div class="srow"><span style="font-size:11px;color:#475569">Correctness</span><span class="sval">' + Math.round(q.correctness * 100) + '%</span></div>';
+    dc.appendChild(card);
+    scrollMsgs();
+    requestAnimationFrame(function() { requestAnimationFrame(function() { card.style.opacity = '1'; }); });
+    demoTimer = setTimeout(nextQ, 1400);
+  }
+
+  function showOverall() {
+    if (!$empty || !$empty.parentNode) return;
+    var o = DEMO_EVAL.overall;
+    var el = document.createElement('div');
+    el.className = 'overall';
+    el.style.cssText = 'opacity:0;transition:opacity 0.4s';
+    el.innerHTML =
+      '<div class="overall-ttl">Overall RAGAS Scores</div>' +
+      '<div class="srow"><span style="font-size:13px">RAGAS Score</span>' + pill(o.ragas) + '</div>' +
+      '<div class="srow"><span style="font-size:12px;color:#94a3b8">Faithfulness</span><span class="sval">' + Math.round(o.faithfulness * 100) + '%</span></div>' +
+      '<div class="srow"><span style="font-size:12px;color:#94a3b8">Answer Relevancy</span><span class="sval">' + Math.round(o.answer_relevancy * 100) + '%</span></div>' +
+      '<div class="srow"><span style="font-size:12px;color:#94a3b8">Correctness</span><span class="sval">' + Math.round(o.correctness * 100) + '%</span></div>';
+    dc.appendChild(el);
+    scrollMsgs();
+    requestAnimationFrame(function() { requestAnimationFrame(function() { el.style.opacity = '1'; }); });
+    demoTimer = setTimeout(function() {
+      fadeDemo(document.getElementById('demo-chat'), done);
+    }, 5000);
+  }
+
+  demoTimer = setTimeout(nextQ, 600);
+}
+
+function typeWriterUser(container, text, done) {
+  if (!$empty || !$empty.parentNode) return;
+  var w = document.createElement('div');
+  w.className = 'mwrap user';
+  var b = document.createElement('div');
+  b.className = 'bubble user';
+  b.textContent = '';
+  w.appendChild(b);
+  container.appendChild(w);
+  var i = 0;
+  function tick() {
+    if (!$empty || !$empty.parentNode) return;
+    b.textContent += text[i++];
+    scrollMsgs();
+    if (i < text.length) {
+      demoTimer = setTimeout(tick, 28 + Math.random() * 22);
+    } else {
+      demoTimer = setTimeout(done, 250);
+    }
+  }
+  demoTimer = setTimeout(tick, 500);
+}
+
+function createDemoAsst(container) {
+  var w = document.createElement('div');
+  w.className = 'mwrap asst';
+  var b = document.createElement('div');
+  b.className = 'bubble asst';
+  b.innerHTML = '<span class="spin"></span>';
+  b._isLoading = true;
+  w.appendChild(b);
+  container.appendChild(w);
+  scrollMsgs();
+  return { w: w, b: b };
+}
+
+function streamDemoWords(b, text, done) {
+  if (!$empty || !$empty.parentNode) return;
+  var words = text.split(' ');
+  var i = 0;
+  b._isLoading = false;
+  b.textContent = '';
+  function tick() {
+    if (!$empty || !$empty.parentNode) return;
+    b.textContent += (i === 0 ? '' : ' ') + words[i++];
+    scrollMsgs();
+    if (i < words.length) {
+      demoTimer = setTimeout(tick, 38 + Math.random() * 28);
+    } else {
+      demoTimer = setTimeout(done, 300);
+    }
+  }
+  demoTimer = setTimeout(tick, 50);
+}
+
+demoTimer = setTimeout(startDemo, 700);
 
 loadDocs();
 </script>
