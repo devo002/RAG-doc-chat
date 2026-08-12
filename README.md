@@ -22,6 +22,10 @@ A full-stack web application that lets you upload PDFs and chat with them using 
 
 ## Quick Start
 
+## Live Demo
+
+![Demo](asset/RAG.gif)
+
 ### Prerequisites
 - Docker and Docker Compose installed
 - An Anthropic API key ([get one here](https://console.anthropic.com))
