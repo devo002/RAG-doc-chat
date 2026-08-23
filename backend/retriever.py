@@ -107,21 +107,53 @@ def _rerank(query: str, results: list) -> list:
 
 def _build_context(results):
     top = results[:TOP_K_RERANK]
-    context_parts, sources = [], []
+    context_parts, content_blocks, sources = [], [], []
+
     for rank_i, hit in enumerate(top):
         p = hit.payload
         page_label = "Cover/Abstract" if p["page"] == 0 else f"Page {p['page']}"
-        doc_text = p["text"]
-        context_parts.append(f"[Source {rank_i + 1} | {p['filename']} | {page_label}]\n{doc_text}")
-        sources.append({
-            "rank": rank_i + 1,
-            "filename": p["filename"],
-            "page": p["page"],
-            "doc_id": p["doc_id"],
-            "similarity": round(float(hit.score), 4),
-            "snippet": doc_text[:220] + ("…" if len(doc_text) > 220 else ""),
-        })
-    return "\n\n---\n\n".join(context_parts), sources
+        chunk_type = p.get("chunk_type", "text")
+        label = f"[Source {rank_i + 1} | {p['filename']} | {page_label}]"
+
+        if chunk_type == "image":
+            caption = p.get("text", "")
+            context_parts.append(f"{label} [Image]\nCaption: {caption}")
+            content_blocks.append({"type": "text", "text": f"{label} [Image]\n"})
+            content_blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": p.get("image_media_type", "image/jpeg"),
+                    "data": p["image_base64"],
+                },
+            })
+            b64 = p.get("image_base64", "")
+            sources.append({
+                "rank": rank_i + 1,
+                "filename": p["filename"],
+                "page": p["page"],
+                "doc_id": p["doc_id"],
+                "similarity": round(float(hit.score), 4),
+                "snippet": caption[:220] + ("…" if len(caption) > 220 else ""),
+                "chunk_type": "image",
+                "image_base64": b64 if len(b64) <= 200_000 else "",
+                "image_media_type": p.get("image_media_type", "image/jpeg"),
+            })
+        else:
+            doc_text = p["text"]
+            context_parts.append(f"{label}\n{doc_text}")
+            content_blocks.append({"type": "text", "text": f"{label}\n{doc_text}"})
+            sources.append({
+                "rank": rank_i + 1,
+                "filename": p["filename"],
+                "page": p["page"],
+                "doc_id": p["doc_id"],
+                "similarity": round(float(hit.score), 4),
+                "snippet": doc_text[:220] + ("…" if len(doc_text) > 220 else ""),
+                "chunk_type": "text",
+            })
+
+    return "\n\n---\n\n".join(context_parts), content_blocks, sources
 
 
 async def rag_stream(query: str, doc_ids: list[str] | None) -> AsyncIterator[str]:
@@ -132,20 +164,29 @@ async def rag_stream(query: str, doc_ids: list[str] | None) -> AsyncIterator[str
         yield "data: " + json.dumps({"type": "error", "content": "No relevant content found."}) + "\n\n"
         return
 
-    context, sources = _build_context(_rerank(query, _hybrid_fuse(query, results)))
-    user_message = (
-        f"Context from uploaded documents:\n\n{context}\n\n"
-        f"---\n\nQuestion: {query}\n\n"
-        "Answer based on the context above, citing [Source N, Page X] for each claim:"
-    )
+    context, content_blocks, sources = _build_context(_rerank(query, _hybrid_fuse(query, results)))
 
     yield "data: " + json.dumps({"type": "sources", "sources": sources}) + "\n\n"
+
+    has_images = any(b.get("type") == "image" for b in content_blocks)
+    if has_images:
+        user_content = (
+            [{"type": "text", "text": "Context from uploaded documents:\n\n"}]
+            + content_blocks
+            + [{"type": "text", "text": f"\n---\n\nQuestion: {query}\n\nAnswer based on the context above, citing [Source N, Page X] for each claim. When an image is relevant, describe what you see in it."}]
+        )
+    else:
+        user_content = (
+            f"Context from uploaded documents:\n\n{context}\n\n"
+            f"---\n\nQuestion: {query}\n\n"
+            "Answer based on the context above, citing [Source N, Page X] for each claim:"
+        )
 
     with state.anthropic_client.messages.stream(
         model="claude-sonnet-4-6",
         max_tokens=1024,
         system=CHAT_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
+        messages=[{"role": "user", "content": user_content}],
     ) as stream:
         for text_chunk in stream.text_stream:
             yield "data: " + json.dumps({"type": "token", "content": text_chunk}) + "\n\n"
@@ -160,7 +201,7 @@ def rag_answer(query: str, doc_ids: list[str] | None = None) -> dict:
     if not results:
         return {"answer": "No relevant content found.", "context": "", "retrieved_count": 0}
 
-    context, _ = _build_context(_rerank(query, _hybrid_fuse(query, results)))
+    context, _, _ = _build_context(_rerank(query, _hybrid_fuse(query, results)))
     user_message = (
         f"Context from uploaded documents:\n\n{context}\n\n"
         f"---\n\nQuestion: {query}\n\nAnswer in 1-2 sentences:"

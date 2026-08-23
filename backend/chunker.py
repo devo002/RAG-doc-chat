@@ -3,8 +3,15 @@ import uuid
 from pathlib import Path
 
 import pypdf
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 
 from config import CHUNK_SIZE_TOKENS, CHUNK_OVERLAP_TOKENS, MIN_CHUNK_CHARS
+
+MIN_IMAGE_BYTES = 5_000   # skip tiny icons/decorations
+MAX_IMAGE_BYTES = 400_000  # skip extremely large images that would bloat SSE
 
 
 def _tokens(text: str) -> int:
@@ -78,3 +85,42 @@ def pdf_to_chunks(pdf_path: Path, doc_id: str, filename: str) -> list[dict]:
 
 def chunk_id(doc_id: str, page: int, chunk_idx: int) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{doc_id}::p{page}::c{chunk_idx}"))
+
+
+def image_chunk_id(doc_id: str, page: int, img_idx: int) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{doc_id}::img::p{page}::i{img_idx}"))
+
+
+def pdf_to_image_chunks(pdf_path: Path, doc_id: str, filename: str) -> list[dict]:
+    """Extract embedded raster images from a PDF using pymupdf."""
+    doc = fitz.open(str(pdf_path))
+    chunks = []
+    img_index = 0
+
+    for page_num, page in enumerate(doc, start=1):
+        for img_info in page.get_images(full=True):
+            xref = img_info[0]
+            try:
+                pix = fitz.Pixmap(doc, xref)
+                if pix.n > 4:  # CMYK → convert to RGB
+                    pix = fitz.Pixmap(fitz.csRGB, pix)
+                img_bytes = pix.tobytes("jpeg", jpg_quality=75)
+            except Exception:
+                continue
+
+            if len(img_bytes) < MIN_IMAGE_BYTES or len(img_bytes) > MAX_IMAGE_BYTES:
+                continue
+
+            chunks.append({
+                "type": "image",
+                "doc_id": doc_id,
+                "filename": filename,
+                "page": page_num,
+                "img_index": img_index,
+                "image_bytes": img_bytes,
+                "image_media_type": "image/jpeg",
+            })
+            img_index += 1
+
+    doc.close()
+    return chunks

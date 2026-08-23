@@ -4,7 +4,8 @@ import numpy as np
 from pathlib import Path
 
 import state
-from retriever import rag_answer
+from retriever import rag_answer, _search, _hybrid_fuse, _rerank, embed
+from config import TOP_K_RETRIEVE, TOP_K_RERANK
 
 _eval_data = json.loads((Path(__file__).parent / "eval_data.json").read_text())
 TEST_QUESTIONS = [{"id": i + 1, **item} for i, item in enumerate(_eval_data)]
@@ -45,6 +46,20 @@ def ragas_score(question: str, context: str, answer: str, ground_truth: str) -> 
     return {"faithfulness": 0.0, "answer_relevancy": 0.0, "correctness": 0.0}
 
 
+def _modality_counts(question: str, doc_ids: list[str] | None) -> dict:
+    """Count how many text vs image chunks appear in the top-K retrieved for this question."""
+    try:
+        q_vec = embed([question])[0]
+        hits = _search(q_vec, doc_ids, TOP_K_RETRIEVE)
+        reranked = _rerank(question, _hybrid_fuse(question, hits))
+        top = reranked[:TOP_K_RERANK]
+        text_count = sum(1 for h in top if h.payload.get("chunk_type", "text") == "text")
+        image_count = sum(1 for h in top if h.payload.get("chunk_type") == "image")
+        return {"text_chunks": text_count, "image_chunks": image_count}
+    except Exception:
+        return {"text_chunks": 0, "image_chunks": 0}
+
+
 def run_evaluation_stream(doc_ids: list[str] | None = None):
     results = []
     total = len(TEST_QUESTIONS)
@@ -52,6 +67,7 @@ def run_evaluation_stream(doc_ids: list[str] | None = None):
         result = rag_answer(tq["question"], doc_ids)
         scores = ragas_score(tq["question"], result["context"], result["answer"], tq["ground_truth"])
         ragas = round((scores["faithfulness"] + scores["answer_relevancy"] + scores["correctness"]) / 3, 3)
+        modality = _modality_counts(tq["question"], doc_ids)
         q_result = {
             "id": tq["id"],
             "question": tq["question"],
@@ -62,6 +78,8 @@ def run_evaluation_stream(doc_ids: list[str] | None = None):
             "correctness": scores["correctness"],
             "ragas_score": ragas,
             "retrieved_count": result["retrieved_count"],
+            "text_chunks": modality["text_chunks"],
+            "image_chunks": modality["image_chunks"],
             "total": total,
         }
         results.append(q_result)
@@ -72,5 +90,6 @@ def run_evaluation_stream(doc_ids: list[str] | None = None):
         "avg_answer_relevancy": round(float(np.mean([r["answer_relevancy"] for r in results])), 3),
         "avg_correctness": round(float(np.mean([r["correctness"] for r in results])), 3),
         "avg_ragas_score": round(float(np.mean([r["ragas_score"] for r in results])), 3),
+        "avg_image_chunks": round(float(np.mean([r["image_chunks"] for r in results])), 2),
     }
     yield f"data: {json.dumps({'type': 'done', 'overall': overall})}\n\n"

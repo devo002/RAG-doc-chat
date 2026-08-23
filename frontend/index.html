@@ -384,18 +384,28 @@ function addSources(w, sources) {
   var box = document.createElement('div');
   box.className = 'src-box';
   var items = sources.map(function(s) {
+    var isImg = s.chunk_type === 'image';
+    var imgHtml = '';
+    if (isImg && s.image_base64) {
+      imgHtml = '<img src="data:' + (s.image_media_type || 'image/jpeg') + ';base64,' + s.image_base64 +
+        '" style="max-width:100%;max-height:160px;border-radius:6px;margin-top:6px;display:block;object-fit:contain">';
+    }
     return '<div class="src-item">' +
-      '<span class="src-tag">S' + s.rank + '</span>' +
-      '<div>' +
+      '<span class="src-tag">S' + s.rank + (isImg ? ' &#128444;' : '') + '</span>' +
+      '<div style="flex:1;min-width:0">' +
         '<div><strong>' + esc(s.filename) + '</strong> &middot; Page ' + s.page +
-        ' <span style="color:#64748b">sim: ' + s.similarity + '</span></div>' +
+        ' <span style="color:#64748b">sim: ' + s.similarity + '</span>' +
+        (isImg ? ' <span style="color:#a78bfa;font-size:10px">image</span>' : '') + '</div>' +
         '<div class="src-meta">' + esc(s.snippet || '') + '</div>' +
+        imgHtml +
       '</div>' +
     '</div>';
   }).join('');
+  var imgCount = sources.filter(function(s) { return s.chunk_type === 'image'; }).length;
+  var label = sources.length + ' source' + (sources.length !== 1 ? 's' : '') + ' retrieved';
+  if (imgCount) label += ' (' + imgCount + ' image' + (imgCount !== 1 ? 's' : '') + ')';
   box.innerHTML =
-    '<button class="src-toggle"><span class="chev">&#9660;</span> ' +
-    sources.length + ' source' + (sources.length !== 1 ? 's' : '') + ' retrieved</button>' +
+    '<button class="src-toggle"><span class="chev">&#9660;</span> ' + label + '</button>' +
     '<div class="src-list">' + items + '</div>';
   var toggle = box.querySelector('.src-toggle');
   var list   = box.querySelector('.src-list');
@@ -487,7 +497,8 @@ function runEval() {
             '<div class="srow"><span style="font-size:11px;color:#475569">Faithfulness</span><span class="sval">' + Math.round(q.faithfulness * 100) + '%</span></div>' +
             '<div class="srow"><span style="font-size:11px;color:#475569">Answer Relevancy</span><span class="sval">' + Math.round(q.answer_relevancy * 100) + '%</span></div>' +
             '<div class="srow"><span style="font-size:11px;color:#475569">Correctness</span><span class="sval">' + Math.round(q.correctness * 100) + '%</span></div>' +
-            '<div class="scnt">' + q.retrieved_count + ' chunks retrieved</div>';
+            '<div class="scnt">' + q.retrieved_count + ' chunks retrieved' +
+            (q.image_chunks ? ' &middot; ' + q.image_chunks + ' image' + (q.image_chunks !== 1 ? 's' : '') : '') + '</div>';
           $evalBody.appendChild(card);
           $evalBody.scrollTop = $evalBody.scrollHeight;
 
@@ -499,7 +510,8 @@ function runEval() {
               '<div class="srow"><span style="font-size:13px">RAGAS Score</span>' + pill(o.avg_ragas_score) + '</div>' +
               '<div class="srow"><span style="font-size:12px;color:#94a3b8">Faithfulness</span><span class="sval">' + Math.round(o.avg_faithfulness * 100) + '%</span></div>' +
               '<div class="srow"><span style="font-size:12px;color:#94a3b8">Answer Relevancy</span><span class="sval">' + Math.round(o.avg_answer_relevancy * 100) + '%</span></div>' +
-              '<div class="srow"><span style="font-size:12px;color:#94a3b8">Correctness</span><span class="sval">' + Math.round(o.avg_correctness * 100) + '%</span></div>';
+              '<div class="srow"><span style="font-size:12px;color:#94a3b8">Correctness</span><span class="sval">' + Math.round(o.avg_correctness * 100) + '%</span></div>' +
+              (o.avg_image_chunks ? '<div class="scnt" style="margin-top:6px">Avg image chunks/query: ' + o.avg_image_chunks + '</div>' : '');
           }
           evalRunning = false;
           evalHasRun = true;
